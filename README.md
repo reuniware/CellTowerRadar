@@ -1,4 +1,4 @@
-# CellTowerRadar Pro - Advanced Cellular Intelligence Tool
+# CellTowerRadar Pro - Advanced Cellular Intelligence & Tactical Mapping
 
 CellTowerRadar Pro est une plateforme mobile de surveillance et d'analyse des infrastructures de télécommunications cellulaires. Conçue pour la collecte de métadonnées réseau et l'analyse de l'environnement radioélectrique, l'application permet une visibilité granulaire sur les vecteurs de connectivité mobile (2G/3G/4G/5G).
 
@@ -9,28 +9,37 @@ L'application exploite les APIs de bas niveau d'Android pour fournir une analyse
 ### ⚡ Intelligence Radio-Fréquence (RF)
 *   **Analyse 5G NR (New Radio)** : Identification des architectures **Standalone (SA)** et **Non-Standalone (NSA)**.
 *   **Métriques de Signal Avancées** : Monitoring précis du **RSRP**, **RSRQ**, **RSSNR**, et **SS-SINR**.
-*   **Paramètres de Couche Physique** : Extraction du **PCI** (Physical Cell ID), **EARFCN** / **NR-ARFCN**, et identification des **Bandes de fréquences** opérées.
-*   **Analyse de Propagation** : Calcul du **Timing Advance (TA)** pour l'estimation de la distance théorique de la source d'émission.
+*   **Analyse du Spectre** : Conversion dynamique des EARFCN/NR-ARFCN en **fréquences réelles (MHz)**.
+*   **Estimation d'Infrastructure** : Algorithmes heuristiques pour l'identification du **Constructeur de l'antenne (Vendor)** (Ericsson, Huawei, Nokia, ZTE).
+*   **Analyse de Propagation** : Calcul du **Timing Advance (TA)** converti en distance métrique pour l'estimation de proximité de la source.
 
-### 🔍 Identification & Vectorisation
-*   **Extraction de Métadonnées** : Collecte systématique des identifiants globaux : **MCC** (Mobile Country Code), **MNC** (Mobile Network Code), **LAC/TAC** (Location/Tracking Area Code) et **Cell ID (CID/NCI)**.
-*   **Multi-SIM Intelligence** : Capacité de monitoring simultané sur plusieurs interfaces d'abonnement pour une analyse multi-opérateurs en temps réel.
-*   **Lookups Externes** : Corrélation de données via des passerelles vers OpenCellID et CellMapper pour la localisation géospatiale des infrastructures.
+### 🗺️ Cartographie Tactique & Géolocalisation
+*   **Visualisation Geospatiale** : Intégration native de **OpenStreetMap (OSM)** pour le mapping en temps réel des vecteurs détectés.
+*   **Positionnement par Corrélation** : Placement automatique des antennes sur la carte via corrélation des coordonnées GNSS au moment du scan.
+*   **Audit de Couverture** : Interface visuelle permettant de suivre le trajet de collecte et l'évolution de la puissance du signal sur zone.
+
+### 🛡️ Heuristiques de Sécurité Réseau
+*   **Détection d'Anomalies (Anti-Stingray)** : Identification des **Cellules Isolées** (absence de voisines déclarées) et alertes sur les **Downgrades Forcés** suspects vers des protocoles vulnérables (2G/3G).
+*   **Monitoring du Handover** : Journalisation des basculements entre cellules pour l'analyse de la stabilité et de la topologie réseau.
 
 ### 💾 Persistance & SIGINT (Signal Intelligence)
-*   **Foreground Monitoring** : Service persistant permettant une collecte de données en continu, même en cas de verrouillage du terminal.
-*   **Journalisation Historique** : Base de données locale des vecteurs uniques rencontrés avec horodatage précis des premières et dernières détections.
-*   **Exportation Tactique** : Génération de rapports au format **CSV** pour post-traitement et analyse de trajectoire (War-driving).
+*   **Foreground Monitoring** : Service persistant avec notification dynamique pour une collecte de données ininterrompue.
+*   **Journalisation Historique** : Base de données locale filtrant les vecteurs uniques avec horodatage de précision.
+*   **Exportation Multi-Format** : Génération de rapports **CSV** et **KML** pour exploitation avancée dans les outils SIG (Google Earth, QGIS).
+
+### 🚦 Diagnostic d'État Système
+*   **Hardware Monitoring** : Dashboard temps réel surveillant le mode avion, l'état du modem, l'économie d'énergie et la disponibilité GNSS.
+*   **Feedback Contextuel** : Remplacement des données indisponibles par des états de traitement (`Searching...`, `Limited Neighbor`, `Scanning...`).
 
 ## 🛠 Architecture & Sécurité
-*   **Framework** : Kotlin / Jetpack Compose.
-*   **Injection de Dépendances** : Hilt (Dagger) pour une architecture modulaire et robuste.
-*   **Sécurité des Données** : Gestion stricte des permissions `ACCESS_FINE_LOCATION` et `READ_PHONE_STATE` conformément aux exigences de sécurité Android 14+.
+*   **Framework** : Kotlin / Jetpack Compose / OSMDroid.
+*   **Injection de Dépendances** : Hilt pour une modularité de type industriel.
+*   **Conformité** : Gestion rigoureuse des flux de permissions conformément aux exigences Android 14+.
 
 ## 🚀 Installation & Déploiement
 1.  Cloner le dépôt.
-2.  Compiler via Android Studio (SDK 36 requis).
-3.  Activer impérativement la **Localisation (GPS)** sur le terminal pour autoriser le modem à transmettre les identifiants de cellules.
+2.  Compiler via Android Studio (SDK 36).
+3.  Activer la **Localisation (GPS)** pour autoriser le modem à exposer les identifiants techniques.
 
 ---
-*Ce projet est destiné à l'analyse technique des réseaux mobiles et au monitoring d'infrastructure.*
+*Ce projet est destiné à l'analyse technique rigoureuse des réseaux mobiles et au monitoring d'infrastructure.*
