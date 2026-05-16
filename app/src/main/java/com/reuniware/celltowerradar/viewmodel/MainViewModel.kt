@@ -154,6 +154,9 @@ class MainViewModel @Inject constructor(
         scanJob?.cancel()
         val intent = Intent(context, CellTowerForegroundService::class.java)
         context.stopService(intent)
+        // Also cancel any pending update download
+        updateManager.cancelDownload()
+        _isDownloading.value = false
     }
 
     fun clearHistory() {
