@@ -149,6 +149,16 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
             AlertCard("POWER SAVE MODE", "Background scanning may be throttled.", Color(0xFF1976D2))
         }
 
+        if (!systemStatus.canInstallPackages) {
+            AlertCard(
+                title = "UPDATE PERMISSION MISSING",
+                message = "The app needs authorization to install its own updates.",
+                color = Color(0xFFD32F2F)
+            ) {
+                viewModel.openInstallPermissionSettings()
+            }
+        }
+
         updateInfo?.let { info ->
             AlertCard(
                 title = if (isDownloading) "DOWNLOADING UPDATE..." else "UPDATE AVAILABLE: ${info.tagName}",

@@ -46,7 +46,8 @@ class MainViewModel @Inject constructor(
         val isAirplaneModeOn: Boolean = false,
         val isGpsEnabled: Boolean = false,
         val hasCellularNetwork: Boolean = true,
-        val isPowerSaveMode: Boolean = false
+        val isPowerSaveMode: Boolean = false,
+        val canInstallPackages: Boolean = true
     )
 
     private val _systemStatus = kotlinx.coroutines.flow.MutableStateFlow(SystemStatus())
@@ -94,12 +95,27 @@ class MainViewModel @Inject constructor(
         val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
         val hasNetwork = telephonyManager.networkOperatorName.isNotEmpty()
 
+        val canInstall = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.packageManager.canRequestPackageInstalls()
+        } else true
+
         _systemStatus.value = SystemStatus(
             isAirplaneModeOn = isAirplaneMode,
             isGpsEnabled = isGpsOn,
             hasCellularNetwork = hasNetwork,
-            isPowerSaveMode = isPowerSave
+            isPowerSaveMode = isPowerSave,
+            canInstallPackages = canInstall
         )
+    }
+
+    fun openInstallPermissionSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = android.net.Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
     }
 
     fun startScanning() {
