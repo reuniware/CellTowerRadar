@@ -283,6 +283,9 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
 @Composable
 fun TacticalMapView(history: List<CellTowerInfo>) {
     val context = LocalContext.current
+    
+    // Crucial for OSM to load tiles
+    Configuration.getInstance().load(context, android.preference.PreferenceManager.getDefaultSharedPreferences(context))
     Configuration.getInstance().userAgentValue = context.packageName
 
     AndroidView(
