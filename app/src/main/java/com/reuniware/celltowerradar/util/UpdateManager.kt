@@ -20,19 +20,22 @@ import javax.inject.Singleton
 
 @Singleton
 class UpdateManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private val GITHUB_API_URL = "https://api.github.com/repos/reuniware/CellTowerRadar/releases/latest"
     private var downloadId: Long = -1L
+    private var updateReceiver: BroadcastReceiver? = null
 
-    suspend fun checkForUpdates(currentVersion: String): String? {
+    data class UpdateInfo(val tagName: String, val downloadUrl: String)
+
+    suspend fun checkForUpdates(currentVersion: String): UpdateInfo? {
         return withContext(Dispatchers.IO) {
             try {
                 val url = URL(GITHUB_API_URL)
                 val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connect()
-
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                
                 if (connection.responseCode == 200) {
                     val response = connection.inputStream.bufferedReader().use { it.readText() }
                     val json = JSONObject(response)
@@ -43,64 +46,97 @@ class UpdateManager @Inject constructor(
                         for (i in 0 until assets.length()) {
                             val asset = assets.getJSONObject(i)
                             if (asset.getString("name").endsWith(".apk")) {
-                                return@withContext asset.getString("browser_download_url")
+                                return@withContext UpdateInfo(
+                                    tagName = latestTag,
+                                    downloadUrl = asset.getString("browser_download_url")
+                                )
                             }
                         }
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                android.util.Log.e("UpdateManager", "Check for updates failed", e)
             }
             null
         }
     }
 
     fun downloadAndInstall(apkUrl: String) {
-        val request = DownloadManager.Request(Uri.parse(apkUrl))
-            .setTitle("CellTowerRadar Update")
-            .setDescription("Downloading latest version...")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "CellTowerRadar_update.apk")
-            .setAllowedOverMetered(true)
-            .setAllowedOverRoaming(true)
+        try {
+            // Delete old update file to avoid cache/conflict issues
+            val oldFile = java.io.File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "update.apk")
+            if (oldFile.exists()) oldFile.delete()
 
-        val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        downloadId = downloadManager.enqueue(request)
+            val request = DownloadManager.Request(Uri.parse(apkUrl))
+                .setTitle("CellTowerRadar Update")
+                .setDescription("Downloading latest version...")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "update.apk")
+                .setAllowedOverMetered(true)
 
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-                if (id == downloadId) {
-                    installApk()
+            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            downloadId = downloadManager.enqueue(request)
+
+            // Cleanup old receiver if any
+            updateReceiver?.let { try { context.unregisterReceiver(it) } catch(e: Exception) {} }
+
+            updateReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                    if (id == downloadId) {
+                        installApk()
+                        // Stop listening once install is triggered
+                        context.unregisterReceiver(this)
+                        updateReceiver = null
+                    }
                 }
             }
-        }
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
-        } else {
-            context.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+            
+            val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(updateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(updateReceiver, filter)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("UpdateManager", "Download failed", e)
         }
     }
 
     private fun installApk() {
-        val file = java.io.File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "CellTowerRadar_update.apk"
-        )
-        if (!file.exists()) return
+        try {
+            val file = java.io.File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "update.apk")
+            if (!file.exists()) {
+                android.util.Log.e("UpdateManager", "APK file not found")
+                return
+            }
 
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
+            // Check if we can install packages (Android 8+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    return
+                }
+            }
 
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            android.util.Log.e("UpdateManager", "Installation failed", e)
         }
-        context.startActivity(intent)
     }
 }

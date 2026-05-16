@@ -30,8 +30,11 @@ class MainViewModel @Inject constructor(
     val cellTowers: StateFlow<List<com.reuniware.celltowerradar.model.CellTowerInfo>> = repository.cellTowers
     val history: StateFlow<List<com.reuniware.celltowerradar.model.CellTowerInfo>> = repository.history
     
-    private val _updateUrl = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-    val updateUrl: StateFlow<String?> = _updateUrl.asStateFlow()
+    private val _updateInfo = kotlinx.coroutines.flow.MutableStateFlow<com.reuniware.celltowerradar.util.UpdateManager.UpdateInfo?>(null)
+    val updateInfo: StateFlow<com.reuniware.celltowerradar.util.UpdateManager.UpdateInfo?> = _updateInfo.asStateFlow()
+
+    private val _isDownloading = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
     
     private val _scanStatus = kotlinx.coroutines.flow.MutableStateFlow("Ready")
     val scanStatus: StateFlow<String> = _scanStatus.asStateFlow()
@@ -58,17 +61,21 @@ class MainViewModel @Inject constructor(
 
     private fun checkForUpdates() {
         viewModelScope.launch {
-            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            val currentVersion = "v${packageInfo.versionName}"
-            val downloadUrl = updateManager.checkForUpdates(currentVersion)
-            _updateUrl.value = downloadUrl
+            try {
+                val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                val currentVersion = "v${packageInfo.versionName}"
+                _updateInfo.value = updateManager.checkForUpdates(currentVersion)
+            } catch (e: Exception) {
+                android.util.Log.e("MainViewModel", "Check updates failed", e)
+            }
         }
     }
 
     fun triggerUpdate() {
-        _updateUrl.value?.let { url ->
-            updateManager.downloadAndInstall(url)
-            _updateUrl.value = null
+        _updateInfo.value?.let { info ->
+            _isDownloading.value = true
+            updateManager.downloadAndInstall(info.downloadUrl)
+            // Note: In a production app, we would listen for download completion to reset this
         }
     }
 

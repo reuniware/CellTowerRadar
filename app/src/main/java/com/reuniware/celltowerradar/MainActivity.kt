@@ -58,7 +58,8 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
     val scanStatus by viewModel.scanStatus.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val systemStatus by viewModel.systemStatus.collectAsState()
-    val updateUrl by viewModel.updateUrl.collectAsState()
+    val updateInfo by viewModel.updateInfo.collectAsState()
+    val isDownloading by viewModel.isDownloading.collectAsState()
 
     // Periodically refresh system status
     LaunchedEffect(Unit) {
@@ -148,14 +149,13 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
             AlertCard("POWER SAVE MODE", "Background scanning may be throttled.", Color(0xFF1976D2))
         }
 
-        updateUrl?.let {
+        updateInfo?.let { info ->
             AlertCard(
-                title = "UPDATE AVAILABLE",
-                message = "A newer tactical version is ready on GitHub.",
-                color = Color(0xFF4CAF50)
-            ) {
-                viewModel.triggerUpdate()
-            }
+                title = if (isDownloading) "DOWNLOADING UPDATE..." else "UPDATE AVAILABLE: ${info.tagName}",
+                message = if (isDownloading) "Please wait while the new version is being fetched." else "A newer tactical version is ready on GitHub.",
+                color = if (isDownloading) Color(0xFF1976D2) else Color(0xFF4CAF50),
+                onAction = if (isDownloading) null else { { viewModel.triggerUpdate() } }
+            )
         }
         
         val activeTower = cellTowers.find { it.isRegistered }
@@ -295,31 +295,24 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
 fun TacticalMapView(history: List<CellTowerInfo>) {
     val context = LocalContext.current
     
-    // Crucial for OSM to load tiles
-    Configuration.getInstance().load(context, android.preference.PreferenceManager.getDefaultSharedPreferences(context))
-    Configuration.getInstance().userAgentValue = context.packageName
+    // Improved OSM Initialization
+    LaunchedEffect(Unit) {
+        Configuration.getInstance().load(context, android.preference.PreferenceManager.getDefaultSharedPreferences(context))
+        Configuration.getInstance().userAgentValue = context.packageName
+    }
 
     AndroidView(
         factory = { ctx ->
             MapView(ctx).apply {
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
+                setUseDataConnection(true) // Force data connection for tiles
                 controller.setZoom(15.0)
                 
-                history.filter { it.latitude != null && it.longitude != null }.forEach { tower ->
-                    val marker = Marker(this)
-                    marker.position = GeoPoint(tower.latitude!!, tower.longitude!!)
-                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    marker.title = "${tower.type} ID: ${tower.cid}"
-                    marker.snippet = "${tower.operatorName}\nSignal: ${tower.signalStrength}dBm"
-                    overlays.add(marker)
-                }
-
                 val lastPoint = history.lastOrNull { it.latitude != null }
                 if (lastPoint != null) {
                     controller.setCenter(GeoPoint(lastPoint.latitude!!, lastPoint.longitude!!))
                 } else {
-                    // Fallback to a default location if no data (e.g., Paris) instead of 0,0
                     controller.setCenter(GeoPoint(48.8566, 2.3522))
                 }
             }
@@ -331,11 +324,20 @@ fun TacticalMapView(history: List<CellTowerInfo>) {
                 val marker = Marker(mapView)
                 marker.position = GeoPoint(tower.latitude!!, tower.longitude!!)
                 marker.title = "${tower.type} ID: ${tower.cid}"
-                marker.snippet = "Signal: ${tower.signalStrength}dBm"
+                marker.snippet = "Signal: ${tower.signalStrength}dBm\nVendor: ${tower.vendor}"
+                
+                // Visual signal indicator on marker
+                val colorRes = when {
+                    (tower.signalStrength ?: -120) > -70 -> android.R.drawable.presence_online
+                    (tower.signalStrength ?: -120) > -90 -> android.R.drawable.presence_away
+                    else -> android.R.drawable.presence_busy
+                }
+                marker.icon = ContextCompat.getDrawable(context, colorRes)
+                
                 mapView.overlays.add(marker)
             }
-            // Only re-center if history was empty and now has data to avoid jumping
-            if (mapView.overlays.isNotEmpty() && mapView.zoomLevelDouble < 3.0) {
+            
+            if (mapView.overlays.isNotEmpty() && mapView.zoomLevelDouble < 5.0) {
                  history.lastOrNull { it.latitude != null }?.let {
                      mapView.controller.animateTo(GeoPoint(it.latitude!!, it.longitude!!))
                      mapView.controller.setZoom(15.0)
