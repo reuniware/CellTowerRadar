@@ -58,6 +58,7 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
     val scanStatus by viewModel.scanStatus.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val systemStatus by viewModel.systemStatus.collectAsState()
+    val updateUrl by viewModel.updateUrl.collectAsState()
 
     // Periodically refresh system status
     LaunchedEffect(Unit) {
@@ -145,6 +146,16 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
         
         if (systemStatus.isPowerSaveMode) {
             AlertCard("POWER SAVE MODE", "Background scanning may be throttled.", Color(0xFF1976D2))
+        }
+
+        updateUrl?.let {
+            AlertCard(
+                title = "UPDATE AVAILABLE",
+                message = "A newer tactical version is ready on GitHub.",
+                color = Color(0xFF4CAF50)
+            ) {
+                viewModel.triggerUpdate()
+            }
         }
         
         val activeTower = cellTowers.find { it.isRegistered }

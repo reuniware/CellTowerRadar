@@ -23,11 +23,15 @@ import kotlinx.coroutines.launch
 class MainViewModel @Inject constructor(
     private val repository: CellTowerRepository,
     private val scanner: CellTowerScanner,
+    private val updateManager: com.reuniware.celltowerradar.util.UpdateManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     val cellTowers: StateFlow<List<com.reuniware.celltowerradar.model.CellTowerInfo>> = repository.cellTowers
     val history: StateFlow<List<com.reuniware.celltowerradar.model.CellTowerInfo>> = repository.history
+    
+    private val _updateUrl = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val updateUrl: StateFlow<String?> = _updateUrl.asStateFlow()
     
     private val _scanStatus = kotlinx.coroutines.flow.MutableStateFlow("Ready")
     val scanStatus: StateFlow<String> = _scanStatus.asStateFlow()
@@ -49,6 +53,23 @@ class MainViewModel @Inject constructor(
 
     init {
         updateSystemStatus()
+        checkForUpdates()
+    }
+
+    private fun checkForUpdates() {
+        viewModelScope.launch {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            val currentVersion = "v${packageInfo.versionName}"
+            val downloadUrl = updateManager.checkForUpdates(currentVersion)
+            _updateUrl.value = downloadUrl
+        }
+    }
+
+    fun triggerUpdate() {
+        _updateUrl.value?.let { url ->
+            updateManager.downloadAndInstall(url)
+            _updateUrl.value = null
+        }
     }
 
     fun updateSystemStatus() {
