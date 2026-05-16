@@ -35,7 +35,44 @@ class MainViewModel @Inject constructor(
     private val _isScanning = kotlinx.coroutines.flow.MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    data class SystemStatus(
+        val isAirplaneModeOn: Boolean = false,
+        val isGpsEnabled: Boolean = false,
+        val hasCellularNetwork: Boolean = true,
+        val isPowerSaveMode: Boolean = false
+    )
+
+    private val _systemStatus = kotlinx.coroutines.flow.MutableStateFlow(SystemStatus())
+    val systemStatus: StateFlow<SystemStatus> = _systemStatus.asStateFlow()
+
     private var scanJob: Job? = null
+
+    init {
+        updateSystemStatus()
+    }
+
+    fun updateSystemStatus() {
+        val isAirplaneMode = android.provider.Settings.Global.getInt(
+            context.contentResolver,
+            android.provider.Settings.Global.AIRPLANE_MODE_ON, 0
+        ) != 0
+
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        val isGpsOn = locationManager.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        val isPowerSave = powerManager.isPowerSaveMode
+
+        val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+        val hasNetwork = telephonyManager.networkOperatorName.isNotEmpty()
+
+        _systemStatus.value = SystemStatus(
+            isAirplaneModeOn = isAirplaneMode,
+            isGpsEnabled = isGpsOn,
+            hasCellularNetwork = hasNetwork,
+            isPowerSaveMode = isPowerSave
+        )
+    }
 
     fun startScanning() {
         if (_isScanning.value) return
@@ -58,10 +95,21 @@ class MainViewModel @Inject constructor(
         scanJob?.cancel()
         scanJob = viewModelScope.launch {
             while (isActive) {
+                // Get current location for mapping
+                val location = try {
+                    val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+                    lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER) 
+                        ?: lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                } catch (e: SecurityException) { null }
+
                 scanner.scan { results ->
                     if (results.isNotEmpty()) {
                         _scanStatus.value = "Found ${results.size} towers"
-                        repository.updateTowers(results)
+                        // Attach current location to each tower for historical mapping
+                        val locatedResults = results.map { 
+                            it.copy(latitude = location?.latitude, longitude = location?.longitude) 
+                        }
+                        repository.updateTowers(locatedResults)
                     } else if (cellTowers.value.isEmpty()) {
                         _scanStatus.value = "No towers found (Check GPS)"
                     }
@@ -102,6 +150,41 @@ class MainViewModel @Inject constructor(
             type = "text/csv"
         }
         val shareIntent = Intent.createChooser(sendIntent, "Export History CSV")
+        shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(shareIntent)
+    }
+
+    fun exportHistoryToKML() {
+        val data = history.value
+        if (data.isEmpty()) return
+
+        val kmlHeader = """<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>CellTowerRadar History</name>
+"""
+        val kmlFooter = """  </Document>
+</kml>"""
+        
+        val kmlPlacemarks = data.joinToString("\n") { 
+            """    <Placemark>
+      <name>${it.type} - ${it.cid}</name>
+      <description>Vendor: ${it.vendor}, Signal: ${it.signalStrength}dBm, MCC: ${it.mcc}, MNC: ${it.mnc}</description>
+      <Point>
+        <!-- Coordinates are N/A since we don't store lat/lon yet, but structure is ready -->
+        <coordinates>0,0,0</coordinates>
+      </Point>
+    </Placemark>"""
+        }
+        
+        val kmlContent = kmlHeader + kmlPlacemarks + kmlFooter
+
+        val sendIntent = Intent().apply {
+            action = Intent.ACTION_SEND
+            putExtra(Intent.EXTRA_TEXT, kmlContent)
+            type = "application/vnd.google-earth.kml+xml"
+        }
+        val shareIntent = Intent.createChooser(sendIntent, "Export History KML")
         shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(shareIntent)
     }

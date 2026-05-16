@@ -40,5 +40,17 @@ data class CellTowerInfo(
     val bandwidth: Int? = null,
     val is5gNsa: Boolean = false,
     val is5gSa: Boolean = false,
-    val dataNetworkType: String? = null
+    val dataNetworkType: String? = null,
+    
+    // Intelligence & Security
+    val frequencyMhz: Double? = null,
+    val bandName: String? = null,
+    val vendor: String? = null,
+    val isIsolated: Boolean = false,
+    val securityAlert: String? = null,
+    val handoversCount: Int = 0,
+
+    // Geospatial data for mapping
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )

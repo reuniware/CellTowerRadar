@@ -17,11 +17,6 @@ L'application exploite les APIs de bas niveau d'Android pour fournir une analyse
 *   **Multi-SIM Intelligence** : Capacité de monitoring simultané sur plusieurs interfaces d'abonnement pour une analyse multi-opérateurs en temps réel.
 *   **Lookups Externes** : Corrélation de données via des passerelles vers OpenCellID et CellMapper pour la localisation géospatiale des infrastructures.
 
-### 🖥️ Interface & Expérience Utilisateur (UX)
-*   **Système d'Audit Interactif** : Interface "Accordéon" permettant de basculer entre une vue synthétique et un audit profond de chaque cellule.
-*   **Contrôle d'État Dynamique** : Gestion intelligente des états de scan (Verrouillage des boutons Start/Stop selon l'activité du modem) pour éviter les collisions de requêtes.
-*   **Dashboard de Statut** : Retour visuel immédiat sur l'état de la communication avec la couche HAL (Hardware Abstraction Layer) et alertes de configuration (GPS).
-
 ### 💾 Persistance & SIGINT (Signal Intelligence)
 *   **Foreground Monitoring** : Service persistant permettant une collecte de données en continu, même en cas de verrouillage du terminal.
 *   **Journalisation Historique** : Base de données locale des vecteurs uniques rencontrés avec horodatage précis des premières et dernières détections.

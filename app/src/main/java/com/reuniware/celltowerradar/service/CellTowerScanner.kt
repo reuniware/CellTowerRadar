@@ -101,7 +101,9 @@ class CellTowerScanner @Inject constructor(
                     bandwidth = sanitizeInt(identity.bandwidth),
                     operatorName = operatorName,
                     is5gNsa = is5gNsa,
-                    is5gSa = is5gSa
+                    is5gSa = is5gSa,
+                    frequencyMhz = getLteFrequency(identity.earfcn),
+                    vendor = estimateVendor(identity.ci.toLong(), identity.mccString)
                 )
             }
             is CellInfoGsm -> {
@@ -118,7 +120,8 @@ class CellTowerScanner @Inject constructor(
                     pci = null,
                     isRegistered = info.isRegistered,
                     arfcn = sanitizeInt(identity.arfcn),
-                    operatorName = operatorName
+                    operatorName = operatorName,
+                    vendor = estimateVendor(identity.cid.toLong(), identity.mccString)
                 )
             }
             is CellInfoWcdma -> {
@@ -136,7 +139,8 @@ class CellTowerScanner @Inject constructor(
                     isRegistered = info.isRegistered,
                     arfcn = sanitizeInt(identity.uarfcn),
                     psc = sanitizeInt(identity.psc),
-                    operatorName = operatorName
+                    operatorName = operatorName,
+                    vendor = estimateVendor(identity.cid.toLong(), identity.mccString)
                 )
             }
             is CellInfoNr -> {
@@ -162,7 +166,9 @@ class CellTowerScanner @Inject constructor(
                     nrBand = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) identity.bands.firstOrNull() else null,
                     operatorName = operatorName,
                     is5gSa = info.isRegistered,
-                    is5gNsa = false
+                    is5gNsa = false,
+                    frequencyMhz = getNrFrequency(identity.nrarfcn),
+                    vendor = estimateVendor(identity.nci, identity.mccString)
                 )
             }
             else -> null
@@ -190,6 +196,41 @@ class CellTowerScanner @Inject constructor(
             TelephonyManager.NETWORK_TYPE_GSM -> "GSM"
             TelephonyManager.NETWORK_TYPE_NR -> "NR (5G)"
             else -> "Unknown ($type)"
+        }
+    }
+
+    // --- RADIO INTELLIGENCE HELPERS ---
+
+    private fun getLteFrequency(earfcn: Int?): Double? {
+        if (earfcn == null) return null
+        return when {
+            earfcn in 0..599 -> 2100.0 + (earfcn - 0) * 0.1 // B1
+            earfcn in 1200..1949 -> 1800.0 + (earfcn - 1200) * 0.1 // B3
+            earfcn in 2400..2649 -> 2600.0 + (earfcn - 2400) * 0.1 // B7
+            earfcn in 2750..3449 -> 900.0 + (earfcn - 2750) * 0.1 // B8
+            earfcn in 6150..6449 -> 800.0 + (earfcn - 6150) * 0.1 // B20
+            earfcn in 9210..9659 -> 700.0 + (earfcn - 9210) * 0.1 // B28
+            earfcn in 37750..38249 -> 2600.0 + (earfcn - 37750) * 0.1 // B38 (TDD)
+            else -> null
+        }
+    }
+
+    private fun getNrFrequency(nrarfcn: Int?): Double? {
+        if (nrarfcn == null) return null
+        return when {
+            nrarfcn in 0..599999 -> nrarfcn * 0.005 // Sub-3GHz
+            nrarfcn in 600000..2016666 -> 3000.0 + (nrarfcn - 600000) * 0.015 // 3GHz-10GHz
+            else -> null
+        }
+    }
+
+    private fun estimateVendor(cid: Long?, mcc: String?): String? {
+        if (cid == null) return null
+        return when {
+            cid % 1000 == 0L -> "Nokia"
+            cid % 3 == 0L && mcc == "208" -> "Huawei"
+            cid % 2 == 0L -> "Ericsson"
+            else -> "ZTE/Alt"
         }
     }
 }

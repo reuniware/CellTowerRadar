@@ -16,23 +16,39 @@ class CellTowerRepository @Inject constructor() {
     val history: StateFlow<List<CellTowerInfo>> = _history.asStateFlow()
 
     fun updateTowers(towers: List<CellTowerInfo>) {
+        val previousRegistered = _cellTowers.value.find { it.isRegistered }
+        val currentRegistered = towers.find { it.isRegistered }
+        
         _cellTowers.value = towers
         
-        // Update History
+        // Update History & Detect Anomalies
         val currentHistory = _history.value.toMutableList()
         towers.forEach { tower ->
+            var updatedTower = tower
+
+            // Anomaly: Isolated Cell (No neighbors)
+            if (tower.isRegistered && towers.size == 1) {
+                updatedTower = updatedTower.copy(isIsolated = true, securityAlert = "ISOLATED CELL DETECTED")
+            }
+
+            // Anomaly: Forced Downgrade
+            if (previousRegistered != null && currentRegistered != null) {
+                if ((previousRegistered.type == "LTE" || previousRegistered.type.contains("NR")) && 
+                    (currentRegistered.type == "GSM" || currentRegistered.type == "WCDMA")) {
+                    updatedTower = updatedTower.copy(securityAlert = "POTENTIAL FORCED DOWNGRADE")
+                }
+            }
+
             val index = currentHistory.indexOfFirst { it.id == tower.id }
             if (index == -1) {
-                // New tower discovered
-                currentHistory.add(tower)
+                currentHistory.add(updatedTower)
             } else {
-                // Update existing tower in history if signal is better or to update timestamp
                 val existing = currentHistory[index]
-                currentHistory[index] = tower.copy(
-                    // Keep the oldest timestamp as "first seen" if we wanted, 
-                    // but here we just update to latest info
+                currentHistory[index] = updatedTower.copy(
                     signalStrength = if ((tower.signalStrength ?: -999) > (existing.signalStrength ?: -999)) 
-                        tower.signalStrength else existing.signalStrength
+                        tower.signalStrength else existing.signalStrength,
+                    handoversCount = if (previousRegistered?.id != currentRegistered?.id && tower.isRegistered) 
+                        existing.handoversCount + 1 else existing.handoversCount
                 )
             }
         }
