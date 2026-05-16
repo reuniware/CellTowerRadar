@@ -304,8 +304,12 @@ fun TacticalMapView(history: List<CellTowerInfo>) {
                     overlays.add(marker)
                 }
 
-                history.firstOrNull { it.latitude != null }?.let {
-                    controller.setCenter(GeoPoint(it.latitude!!, it.longitude!!))
+                val lastPoint = history.lastOrNull { it.latitude != null }
+                if (lastPoint != null) {
+                    controller.setCenter(GeoPoint(lastPoint.latitude!!, lastPoint.longitude!!))
+                } else {
+                    // Fallback to a default location if no data (e.g., Paris) instead of 0,0
+                    controller.setCenter(GeoPoint(48.8566, 2.3522))
                 }
             }
         },
@@ -318,6 +322,13 @@ fun TacticalMapView(history: List<CellTowerInfo>) {
                 marker.title = "${tower.type} ID: ${tower.cid}"
                 marker.snippet = "Signal: ${tower.signalStrength}dBm"
                 mapView.overlays.add(marker)
+            }
+            // Only re-center if history was empty and now has data to avoid jumping
+            if (mapView.overlays.isNotEmpty() && mapView.zoomLevelDouble < 3.0) {
+                 history.lastOrNull { it.latitude != null }?.let {
+                     mapView.controller.animateTo(GeoPoint(it.latitude!!, it.longitude!!))
+                     mapView.controller.setZoom(15.0)
+                 }
             }
             mapView.invalidate()
         }
