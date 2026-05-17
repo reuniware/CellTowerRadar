@@ -10,8 +10,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
-
 import androidx.lifecycle.viewModelScope
 import com.reuniware.celltowerradar.service.CellTowerScanner
 import kotlinx.coroutines.Job
@@ -28,8 +29,27 @@ class MainViewModel @Inject constructor(
 ) : ViewModel() {
 
     val cellTowers: StateFlow<List<com.reuniware.celltowerradar.model.CellTowerInfo>> = repository.cellTowers
-    val history: StateFlow<List<com.reuniware.celltowerradar.model.CellTowerInfo>> = repository.history
-    
+    val history: StateFlow<List<com.reuniware.celltowerradar.model.CellTowerInfo>> = repository.history.map { list ->
+        list.map { entity ->
+            // Manual conversion back to model
+            com.reuniware.celltowerradar.model.CellTowerInfo(
+                id = entity.id, type = entity.type, mcc = entity.mcc, mnc = entity.mnc,
+                lac = entity.lac, cid = entity.cid, signalStrength = entity.signalStrength,
+                pci = entity.pci, isRegistered = entity.isRegistered, timestamp = entity.timestamp,
+                latitude = entity.latitude, longitude = entity.longitude,
+                rsrp = entity.rsrp, rsrq = entity.rsrq, rssnr = entity.rssnr,
+                cqi = entity.cqi, ta = entity.ta, earfcn = entity.earfcn,
+                lteBand = entity.lteBand, ssRsrp = entity.ssRsrp, ssRsrq = entity.ssRsrq,
+                ssSinr = entity.ssSinr, csiRsrp = entity.csiRsrp, csiRsrq = entity.csiRsrq,
+                csiSinr = entity.csiSinr, nrarfcn = entity.nrarfcn, nrBand = entity.nrBand,
+                arfcn = entity.arfcn, psc = entity.psc, operatorName = entity.operatorName,
+                bandwidth = entity.bandwidth, is5gNsa = entity.is5gNsa, is5gSa = entity.is5gSa,
+                dataNetworkType = entity.dataNetworkType, frequencyMhz = entity.frequencyMhz,
+                vendor = entity.vendor, isIsolated = entity.isIsolated,
+                securityAlert = entity.securityAlert, handoversCount = entity.handoversCount
+            )
+        }
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
     private val _updateInfo = kotlinx.coroutines.flow.MutableStateFlow<com.reuniware.celltowerradar.util.UpdateManager.UpdateInfo?>(null)
     val updateInfo: StateFlow<com.reuniware.celltowerradar.util.UpdateManager.UpdateInfo?> = _updateInfo.asStateFlow()
 
@@ -143,23 +163,36 @@ class MainViewModel @Inject constructor(
         scanJob = viewModelScope.launch {
             while (isActive) {
                 // Get current location for mapping
-                val location = try {
-                    val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+                val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+                val newLocation = try {
                     // Get highest accuracy location possible
-                    lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER) 
+                    val loc = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER) 
                         ?: lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
-                } catch (e: SecurityException) { null }
+                    
+                    if (loc != null) {
+                        android.util.Log.d("MainViewModel", "New location captured: ${loc.latitude}, ${loc.longitude}")
+                        _currentUserLocation.value = loc
+                    }
+                    loc
+                } catch (e: SecurityException) { 
+                    android.util.Log.e("MainViewModel", "Location permission error", e)
+                    null 
+                }
 
-                _currentUserLocation.value = location
+                val locationToUse = newLocation ?: _currentUserLocation.value
+                android.util.Log.d("MainViewModel", "Using location: ${locationToUse?.latitude}, ${locationToUse?.longitude}")
+
 
                 scanner.scan { results ->
                     if (results.isNotEmpty()) {
                         _scanStatus.value = "Found ${results.size} towers"
                         // Attach current location to each tower for historical mapping
                         val locatedResults = results.map { 
-                            it.copy(latitude = location?.latitude, longitude = location?.longitude) 
+                            it.copy(latitude = locationToUse?.latitude, longitude = locationToUse?.longitude)
                         }
-                        repository.updateTowers(locatedResults)
+                        launch {
+                            repository.updateTowers(locatedResults)
+                        }
                     } else if (cellTowers.value.isEmpty()) {
                         _scanStatus.value = "No towers found (Check GPS)"
                     }
@@ -182,30 +215,35 @@ class MainViewModel @Inject constructor(
     }
 
     fun clearHistory() {
-        repository.clearHistory()
+        viewModelScope.launch {
+            repository.clearHistory()
+        }
     }
 
     fun exportHistoryToCSV() {
-        val data = history.value
-        if (data.isEmpty()) return
+        viewModelScope.launch {
+            val data = history.value
+            if (data.isEmpty()) return@launch
 
-        val csvHeader = "Timestamp,Type,Operator,MCC,MNC,LAC_TAC,CID_NCI,Signal_dBm,RSRP,RSRQ,RSSNR,Band\n"
-        val csvRows = data.joinToString("\n") { 
-            "${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(it.timestamp)}," +
-            "${it.type},${it.operatorName},${it.mcc},${it.mnc},${it.lac},${it.cid},${it.signalStrength}," +
-            "${it.rsrp ?: ""},${it.rsrq ?: ""},${it.rssnr ?: ""},${it.lteBand ?: it.nrBand ?: ""}"
-        }
-        val csvContent = csvHeader + csvRows
+            val csvHeader = "Timestamp,Type,Operator,MCC,MNC,LAC_TAC,CID_NCI,Signal_dBm,RSRP,RSRQ,RSSNR,Band\n"
+            val csvRows = data.joinToString("\n") { 
+                "${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(it.timestamp)}," +
+                "${it.type},${it.operatorName},${it.mcc},${it.mnc},${it.lac},${it.cid},${it.signalStrength}," +
+                "${it.rsrp ?: ""},${it.rsrq ?: ""},${it.rssnr ?: ""},${it.lteBand ?: it.nrBand ?: ""}"
+            }
+            val csvContent = csvHeader + csvRows
 
-        val sendIntent = Intent().apply {
-            action = Intent.ACTION_SEND
-            putExtra(Intent.EXTRA_TEXT, csvContent)
-            type = "text/csv"
+            val sendIntent = Intent().apply {
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_TEXT, csvContent)
+                type = "text/csv"
+            }
+            val shareIntent = Intent.createChooser(sendIntent, "Export History CSV")
+            shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(shareIntent)
         }
-        val shareIntent = Intent.createChooser(sendIntent, "Export History CSV")
-        shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(shareIntent)
     }
+
 
     fun exportHistoryToKML() {
         val data = history.value

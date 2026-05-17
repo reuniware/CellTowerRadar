@@ -1,15 +1,20 @@
 package com.reuniware.celltowerradar.service
 
+import android.annotation.SuppressLint
 import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.reuniware.celltowerradar.MainActivity
 import com.reuniware.celltowerradar.repository.CellTowerRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -23,6 +28,7 @@ class CellTowerForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var scanJob: Job? = null
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
 
     companion object {
         const val CHANNEL_ID = "CellTowerScanningChannel"
@@ -32,6 +38,18 @@ class CellTowerForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun getCurrentLocation(): android.location.Location? {
+        return try {
+            val task = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+            task.await()
+        } catch (e: Exception) {
+            android.util.Log.e("CellTowerService", "Error getting location", e)
+            null
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -78,10 +96,15 @@ class CellTowerForegroundService : Service() {
         scanJob = serviceScope.launch {
             while (isActive) {
                 android.util.Log.d("CellTowerService", "Requesting scan...")
+                // Wrapped the scan call to ensure repository operations run within a coroutine context if needed,
+                // although the error specifically suggests a problem with how the suspend function/callback interacts.
+                // Given the scanner structure, we will just ensure the repository update is handled appropriately.
                 scanner.scan { results ->
-                    android.util.Log.d("CellTowerService", "Scan results received: ${results.size} towers")
-                    repository.updateTowers(results)
-                    updateNotification("${results.size} towers found")
+                    launch {
+                        android.util.Log.d("CellTowerService", "Scan results received: ${results.size} towers")
+                        repository.updateTowers(results)
+                        updateNotification("${results.size} towers found")
+                    }
                 }
                 delay(5000)
             }

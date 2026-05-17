@@ -38,6 +38,7 @@ import org.osmdroid.views.overlay.Marker
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             CellTowerRadarTheme {
                 Surface(
@@ -60,6 +61,9 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
     val systemStatus by viewModel.systemStatus.collectAsState()
     val updateInfo by viewModel.updateInfo.collectAsState()
     val isDownloading by viewModel.isDownloading.collectAsState()
+
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var navigateToLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
     // Periodically refresh system status
     LaunchedEffect(Unit) {
@@ -202,107 +206,114 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+        // ... alerts and header ...
         
-        if (hasLocationPermission && hasPhoneStatePermission && hasNotificationPermission) {
-            when (selectedTab) {
-                0 -> {
-                    // LIVE VIEW
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        Button(
-                            onClick = { viewModel.startScanning() },
-                            enabled = !isScanning,
-                            colors = ButtonDefaults.buttonColors(
-                                disabledContainerColor = Color.LightGray,
-                                disabledContentColor = Color.DarkGray
-                            )
-                        ) {
-                            Text("Start Scan")
+        // Use weight 1f for the content area to allow it to take available space
+        Column(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            if (hasLocationPermission && hasPhoneStatePermission && hasNotificationPermission) {
+                when (selectedTab) {
+                    0 -> {
+                        // LIVE VIEW
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            Button(
+                                onClick = { viewModel.startScanning() },
+                                enabled = !isScanning,
+                                colors = ButtonDefaults.buttonColors(
+                                    disabledContainerColor = Color.LightGray,
+                                    disabledContentColor = Color.DarkGray
+                                )
+                            ) {
+                                Text("Start Scan")
+                            }
+                            Button(
+                                onClick = { viewModel.stopScanning() },
+                                enabled = isScanning,
+                                colors = ButtonDefaults.buttonColors(
+                                    disabledContainerColor = Color.LightGray,
+                                    disabledContentColor = Color.DarkGray
+                                )
+                            ) {
+                                Text("Stop Scan")
+                            }
                         }
-                        Button(
-                            onClick = { viewModel.stopScanning() },
-                            enabled = isScanning,
-                            colors = ButtonDefaults.buttonColors(
-                                disabledContainerColor = Color.LightGray,
-                                disabledContentColor = Color.DarkGray
-                            )
+                        Text(
+                            text = "Status: $scanStatus",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Stop Scan")
+                            items(cellTowers) { tower ->
+                                CellTowerItem(tower)
+                            }
                         }
                     }
-                    Text(
-                        text = "Status: $scanStatus",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                    1 -> {
+                        // HISTORY VIEW
+                        val history by viewModel.history.collectAsState()
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            Button(onClick = { viewModel.exportHistoryToCSV() }) {
+                                Text("CSV")
+                            }
+                            Button(onClick = { viewModel.exportHistoryToKML() }) {
+                                Text("KML")
+                            }
+                            Button(
+                                onClick = { viewModel.clearHistory() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("Clear")
+                            }
+                        }
+                        Text(
+                            text = "${history.size} unique cells encountered",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(history) { tower ->
+                                CellTowerItem(tower) { lat, lon ->
+                                    navigateToLocation = Pair(lat, lon)
+                                    selectedTab = 2
+                                }
+                            }
+                        }
+                    }
+                    2 -> {
+                        // TACTICAL MAP VIEW
+                        val historyData by viewModel.history.collectAsState()
+                        TacticalMapView(history = historyData, initialLocation = navigateToLocation)
+                    }
+                }
+            } else {
+                Text(text = "Permissions required to scan cell towers in background.")
+                Button(onClick = {
+                    val permissions = mutableListOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.READ_PHONE_STATE
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(cellTowers) { tower ->
-                            CellTowerItem(tower)
-                        }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
                     }
+                    launcher.launch(permissions.toTypedArray())
+                }) {
+                    Text("Grant Permissions")
                 }
-                1 -> {
-                    // HISTORY VIEW
-                    val history by viewModel.history.collectAsState()
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        Button(onClick = { viewModel.exportHistoryToCSV() }) {
-                            Text("CSV")
-                        }
-                        Button(onClick = { viewModel.exportHistoryToKML() }) {
-                            Text("KML")
-                        }
-                        Button(
-                            onClick = { viewModel.clearHistory() },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Text("Clear")
-                        }
-                    }
-                    Text(
-                        text = "${history.size} unique cells encountered",
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(history) { tower ->
-                            CellTowerItem(tower)
-                        }
-                    }
-                }
-                2 -> {
-                    // TACTICAL MAP VIEW
-                    val historyData by viewModel.history.collectAsState()
-                    TacticalMapView(history = historyData)
-                }
-            }
-        } else {
-            Text(text = "Permissions required to scan cell towers in background.")
-            Button(onClick = {
-                val permissions = mutableListOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                    Manifest.permission.READ_PHONE_STATE
-                )
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                }
-                launcher.launch(permissions.toTypedArray())
-            }) {
-                Text("Grant Permissions")
             }
         }
     }
 }
 
 @Composable
-fun TacticalMapView(history: List<CellTowerInfo>) {
+fun TacticalMapView(history: List<CellTowerInfo>, initialLocation: Pair<Double, Double>?) {
     val context = LocalContext.current
     
     // Improved OSM Initialization
@@ -311,47 +322,72 @@ fun TacticalMapView(history: List<CellTowerInfo>) {
         Configuration.getInstance().userAgentValue = context.packageName
     }
 
+    // State to track if user has manually moved the map
+    var isMapInteracted by remember { mutableStateOf(false) }
+
+    // Effect to handle navigation from history
+    LaunchedEffect(initialLocation) {
+        initialLocation?.let { isMapInteracted = false }
+    }
+
     AndroidView(
         factory = { ctx ->
             MapView(ctx).apply {
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
-                setUseDataConnection(true) // Force data connection for tiles
+                setUseDataConnection(true)
                 controller.setZoom(15.0)
-                
-                val lastPoint = history.lastOrNull { it.latitude != null }
-                if (lastPoint != null) {
-                    controller.setCenter(GeoPoint(lastPoint.latitude!!, lastPoint.longitude!!))
-                } else {
-                    controller.setCenter(GeoPoint(48.8566, 2.3522))
+
+                // Listen for user interaction to stop automatic centering
+                setOnTouchListener { _, _ ->
+                    isMapInteracted = true
+                    false
                 }
+                
+                // Set center on passed location, last known, or default
+                val point = initialLocation?.let { GeoPoint(it.first, it.second) }
+                    ?: history.lastOrNull { it.latitude != null }?.let { GeoPoint(it.latitude!!, it.longitude!!) }
+                    ?: GeoPoint(48.8566, 2.3522)
+                
+                controller.setCenter(point)
             }
         },
         modifier = Modifier.fillMaxSize(),
         update = { mapView ->
+            // Use a map to aggregate markers by a unique ID (CID)
+            // This prevents duplicate markers when location varies slightly
+            val uniqueTowers = history.filter { it.latitude != null && it.longitude != null }
+                .groupBy { it.cid ?: it.id } // Group by CID or fallback to ID
+                .mapValues { entry -> entry.value.last() } // Keep the most recent data for this tower
+
+            // Clear and re-add only if the set of towers has changed significantly
+            // Or just clear/re-add once per update.
             mapView.overlays.clear()
-            history.filter { it.latitude != null && it.longitude != null }.forEach { tower ->
+            uniqueTowers.values.forEach { tower ->
                 val marker = Marker(mapView)
                 marker.position = GeoPoint(tower.latitude!!, tower.longitude!!)
                 marker.title = "${tower.type} ID: ${tower.cid}"
                 marker.snippet = "Signal: ${tower.signalStrength}dBm\nVendor: ${tower.vendor}"
                 
-                // Visual signal indicator on marker
-                val colorRes = when {
-                    (tower.signalStrength ?: -120) > -70 -> android.R.drawable.presence_online
-                    (tower.signalStrength ?: -120) > -90 -> android.R.drawable.presence_away
-                    else -> android.R.drawable.presence_busy
+                marker.setOnMarkerClickListener { m, _ ->
+                    isMapInteracted = true
+                    mapView.controller.animateTo(m.position)
+                    m.showInfoWindow()
+                    true
                 }
-                marker.icon = ContextCompat.getDrawable(context, colorRes)
-                
+
+                marker.icon = ContextCompat.getDrawable(context, org.osmdroid.library.R.drawable.marker_default)
                 mapView.overlays.add(marker)
             }
             
-            if (mapView.overlays.isNotEmpty() && mapView.zoomLevelDouble < 5.0) {
-                 history.lastOrNull { it.latitude != null }?.let {
-                     mapView.controller.animateTo(GeoPoint(it.latitude!!, it.longitude!!))
-                     mapView.controller.setZoom(15.0)
-                 }
+            // Only auto-center if user hasn't interacted with the map
+            if (!isMapInteracted) {
+                val centerPoint = initialLocation?.let { GeoPoint(it.first, it.second) }
+                    ?: history.lastOrNull { it.latitude != null }?.let { GeoPoint(it.latitude!!, it.longitude!!) }
+                
+                centerPoint?.let {
+                    mapView.controller.animateTo(it)
+                }
             }
             mapView.invalidate()
         }
@@ -359,7 +395,7 @@ fun TacticalMapView(history: List<CellTowerInfo>) {
 }
 
 @Composable
-fun CellTowerItem(tower: CellTowerInfo) {
+fun CellTowerItem(tower: CellTowerInfo, onNavigateToMap: ((Double, Double) -> Unit)? = null) {
     var isExpanded by remember { mutableStateOf(false) }
     
     Card(
@@ -514,9 +550,34 @@ fun CellTowerItem(tower: CellTowerInfo) {
                         Text("Google Search", fontSize = 10.sp)
                     }
                 }
+                
+                // Local Map Button
+                Spacer(modifier = Modifier.height(8.dp))
+                val hasCoords = tower.latitude != null && tower.longitude != null
+                val canNavigate = hasCoords && onNavigateToMap != null
+                Button(
+                    onClick = { if (canNavigate) onNavigateToMap?.invoke(tower.latitude!!, tower.longitude!!) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = canNavigate,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text(if (hasCoords) "Locate on Map" else "Location Unavailable")
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
+            if (tower.latitude != null && tower.longitude != null) {
+                Text(
+                    text = "GPS: ${"%.5f".format(tower.latitude)}, ${"%.5f".format(tower.longitude)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
             Text(
                 text = "Last updated: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(tower.timestamp)}",
                 style = MaterialTheme.typography.labelSmall,

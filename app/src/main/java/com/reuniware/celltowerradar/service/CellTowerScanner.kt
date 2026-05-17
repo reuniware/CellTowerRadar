@@ -77,12 +77,18 @@ class CellTowerScanner @Inject constructor(
         fun sanitizeLong(value: Long): Long? = if (value == Long.MAX_VALUE || value == -1L) null else value
         fun sanitizeString(value: String?): String? = if (value == null || value == "2147483647") null else value
 
+        fun getOperatorKey(mcc: String?, mnc: String?): String {
+            return if (mcc.isNullOrEmpty() || mnc.isNullOrEmpty()) "UNKNOWN" else "${mcc}_${mnc}"
+        }
+
         return when (info) {
             is CellInfoLte -> {
                 val identity = info.cellIdentity
                 val signal = info.cellSignalStrength
+                val operatorKey = getOperatorKey(identity.mccString, identity.mncString)
+                val uniqueId = "LTE_${operatorKey}_${identity.tac}_${identity.ci}_${identity.earfcn}"
                 CellTowerInfo(
-                    id = "LTE_${identity.ci}",
+                    id = uniqueId,
                     type = "LTE",
                     mcc = sanitizeString(identity.mccString),
                     mnc = sanitizeString(identity.mncString),
@@ -109,8 +115,10 @@ class CellTowerScanner @Inject constructor(
             is CellInfoGsm -> {
                 val identity = info.cellIdentity
                 val signal = info.cellSignalStrength
+                val operatorKey = getOperatorKey(identity.mccString, identity.mncString)
+                val uniqueId = "GSM_${operatorKey}_${identity.lac}_${identity.cid}"
                 CellTowerInfo(
-                    id = "GSM_${identity.cid}",
+                    id = uniqueId,
                     type = "GSM",
                     mcc = sanitizeString(identity.mccString),
                     mnc = sanitizeString(identity.mncString),
@@ -127,8 +135,10 @@ class CellTowerScanner @Inject constructor(
             is CellInfoWcdma -> {
                 val identity = info.cellIdentity
                 val signal = info.cellSignalStrength
+                val operatorKey = getOperatorKey(identity.mccString, identity.mncString)
+                val uniqueId = "WCDMA_${operatorKey}_${identity.lac}_${identity.cid}"
                 CellTowerInfo(
-                    id = "WCDMA_${identity.cid}",
+                    id = uniqueId,
                     type = "WCDMA",
                     mcc = sanitizeString(identity.mccString),
                     mnc = sanitizeString(identity.mncString),
@@ -146,8 +156,10 @@ class CellTowerScanner @Inject constructor(
             is CellInfoNr -> {
                 val identity = info.cellIdentity as CellIdentityNr
                 val signal = info.cellSignalStrength as CellSignalStrengthNr
+                val operatorKey = getOperatorKey(identity.mccString, identity.mncString)
+                val uniqueId = "NR_${operatorKey}_${identity.tac}_${identity.nci}"
                 CellTowerInfo(
-                    id = "NR_${identity.nci}",
+                    id = uniqueId,
                     type = "NR (5G)",
                     mcc = sanitizeString(identity.mccString),
                     mnc = sanitizeString(identity.mncString),
