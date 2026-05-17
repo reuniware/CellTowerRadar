@@ -39,6 +39,9 @@ class MainViewModel @Inject constructor(
     private val _scanStatus = kotlinx.coroutines.flow.MutableStateFlow("Ready")
     val scanStatus: StateFlow<String> = _scanStatus.asStateFlow()
 
+    private val _currentUserLocation = kotlinx.coroutines.flow.MutableStateFlow<android.location.Location?>(null)
+    val currentUserLocation: StateFlow<android.location.Location?> = _currentUserLocation.asStateFlow()
+
     private val _isScanning = kotlinx.coroutines.flow.MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
@@ -142,9 +145,12 @@ class MainViewModel @Inject constructor(
                 // Get current location for mapping
                 val location = try {
                     val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+                    // Get highest accuracy location possible
                     lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER) 
                         ?: lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
                 } catch (e: SecurityException) { null }
+
+                _currentUserLocation.value = location
 
                 scanner.scan { results ->
                     if (results.isNotEmpty()) {
