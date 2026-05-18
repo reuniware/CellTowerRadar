@@ -20,9 +20,26 @@ class CellTowerRepository @Inject constructor(
     val history: Flow<List<CellTowerEntity>> = cellTowerDao.getAllHistory()
 
     suspend fun updateTowers(towers: List<CellTowerInfo>) {
-        _cellTowers.value = towers
+        val updatedTowers = towers.map { tower ->
+            val existingEntity = cellTowerDao.getTowerById(tower.id)
+            val currentSignal = tower.signalStrength ?: -999
+            val existingSignal = existingEntity?.signalStrength ?: -999
+            
+            val keepOldLocation = existingEntity != null && 
+                                  existingEntity.latitude != null && 
+                                  existingEntity.longitude != null &&
+                                  currentSignal <= existingSignal
+            
+            if (keepOldLocation) {
+                tower.copy(latitude = existingEntity.latitude, longitude = existingEntity.longitude)
+            } else {
+                tower
+            }
+        }
+
+        _cellTowers.value = updatedTowers
         
-        towers.forEach { tower ->
+        updatedTowers.forEach { tower ->
             // Convert to Entity for storage
             val entity = CellTowerEntity(
                 id = tower.id, type = tower.type, mcc = tower.mcc, mnc = tower.mnc,

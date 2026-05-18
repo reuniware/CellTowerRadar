@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -126,7 +127,7 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    Column(modifier = Modifier.padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text(
             text = "Cell Tower Radar Pro",
             style = MaterialTheme.typography.headlineMedium,
@@ -247,8 +248,14 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(cellTowers) { tower ->
-                                CellTowerItem(tower)
+                            items(
+                                items = cellTowers,
+                                key = { it.id }
+                            ) { tower ->
+                                CellTowerItem(tower) { lat, lon ->
+                                    navigateToLocation = Pair(lat, lon)
+                                    selectedTab = 2
+                                }
                             }
                         }
                     }
@@ -278,7 +285,10 @@ fun CellTowerRadarScreen(viewModel: MainViewModel = viewModel()) {
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(history) { tower ->
+                            items(
+                                items = history,
+                                key = { it.id }
+                            ) { tower ->
                                 CellTowerItem(tower) { lat, lon ->
                                     navigateToLocation = Pair(lat, lon)
                                     selectedTab = 2
@@ -352,7 +362,7 @@ fun TacticalMapView(history: List<CellTowerInfo>, initialLocation: Pair<Double, 
                 controller.setCenter(point)
             }
         },
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().clipToBounds(),
         update = { mapView ->
             // Use a map to aggregate markers by a unique ID (CID)
             // This prevents duplicate markers when location varies slightly

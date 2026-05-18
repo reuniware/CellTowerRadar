@@ -15,6 +15,9 @@ interface CellTowerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(tower: CellTowerEntity)
 
+    @Query("SELECT * FROM cell_towers WHERE id = :id LIMIT 1")
+    suspend fun getTowerById(id: String): CellTowerEntity?
+
     @Query("DELETE FROM cell_towers")
     suspend fun clearHistory()
 }
