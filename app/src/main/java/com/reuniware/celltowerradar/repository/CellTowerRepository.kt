@@ -1,6 +1,8 @@
 package com.reuniware.celltowerradar.repository
 
+import com.reuniware.celltowerradar.model.CellTowerEntity
 import com.reuniware.celltowerradar.model.CellTowerInfo
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -8,54 +10,58 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class CellTowerRepository @Inject constructor() {
+class CellTowerRepository @Inject constructor(
+    private val cellTowerDao: CellTowerDao
+) {
     private val _cellTowers = MutableStateFlow<List<CellTowerInfo>>(emptyList())
     val cellTowers: StateFlow<List<CellTowerInfo>> = _cellTowers.asStateFlow()
 
-    private val _history = MutableStateFlow<List<CellTowerInfo>>(emptyList())
-    val history: StateFlow<List<CellTowerInfo>> = _history.asStateFlow()
+    // Expose flow from DB
+    val history: Flow<List<CellTowerEntity>> = cellTowerDao.getAllHistory()
 
-    fun updateTowers(towers: List<CellTowerInfo>) {
-        val previousRegistered = _cellTowers.value.find { it.isRegistered }
-        val currentRegistered = towers.find { it.isRegistered }
-        
-        _cellTowers.value = towers
-        
-        // Update History & Detect Anomalies
-        val currentHistory = _history.value.toMutableList()
-        towers.forEach { tower ->
-            var updatedTower = tower
-
-            // Anomaly: Isolated Cell (No neighbors)
-            if (tower.isRegistered && towers.size == 1) {
-                updatedTower = updatedTower.copy(isIsolated = true, securityAlert = "ISOLATED CELL DETECTED")
-            }
-
-            // Anomaly: Forced Downgrade
-            if (previousRegistered != null && currentRegistered != null) {
-                if ((previousRegistered.type == "LTE" || previousRegistered.type.contains("NR")) && 
-                    (currentRegistered.type == "GSM" || currentRegistered.type == "WCDMA")) {
-                    updatedTower = updatedTower.copy(securityAlert = "POTENTIAL FORCED DOWNGRADE")
-                }
-            }
-
-            val index = currentHistory.indexOfFirst { it.id == tower.id }
-            if (index == -1) {
-                currentHistory.add(updatedTower)
+    suspend fun updateTowers(towers: List<CellTowerInfo>) {
+        val updatedTowers = towers.map { tower ->
+            val existingEntity = cellTowerDao.getTowerById(tower.id)
+            val currentSignal = tower.signalStrength ?: -999
+            val existingSignal = existingEntity?.signalStrength ?: -999
+            
+            val keepOldLocation = existingEntity != null && 
+                                  existingEntity.latitude != null && 
+                                  existingEntity.longitude != null &&
+                                  currentSignal <= existingSignal
+            
+            if (keepOldLocation) {
+                tower.copy(latitude = existingEntity.latitude, longitude = existingEntity.longitude)
             } else {
-                val existing = currentHistory[index]
-                currentHistory[index] = updatedTower.copy(
-                    signalStrength = if ((tower.signalStrength ?: -999) > (existing.signalStrength ?: -999)) 
-                        tower.signalStrength else existing.signalStrength,
-                    handoversCount = if (previousRegistered?.id != currentRegistered?.id && tower.isRegistered) 
-                        existing.handoversCount + 1 else existing.handoversCount
-                )
+                tower
             }
         }
-        _history.value = currentHistory.sortedByDescending { it.timestamp }
+
+        _cellTowers.value = updatedTowers
+        
+        updatedTowers.forEach { tower ->
+            // Convert to Entity for storage
+            val entity = CellTowerEntity(
+                id = tower.id, type = tower.type, mcc = tower.mcc, mnc = tower.mnc,
+                lac = tower.lac, cid = tower.cid, signalStrength = tower.signalStrength,
+                pci = tower.pci, isRegistered = tower.isRegistered, timestamp = tower.timestamp,
+                latitude = tower.latitude, longitude = tower.longitude, altitude = tower.altitude,
+                rsrp = tower.rsrp, rsrq = tower.rsrq, rssnr = tower.rsrq,
+                cqi = tower.cqi, ta = tower.ta, earfcn = tower.earfcn,
+                lteBand = tower.lteBand, ssRsrp = tower.ssRsrp, ssRsrq = tower.ssRsrq,
+                ssSinr = tower.ssSinr, csiRsrp = tower.csiRsrp, csiRsrq = tower.csiRsrq,
+                csiSinr = tower.csiSinr, nrarfcn = tower.nrarfcn, nrBand = tower.nrBand,
+                arfcn = tower.arfcn, psc = tower.psc, operatorName = tower.operatorName,
+                bandwidth = tower.bandwidth, is5gNsa = tower.is5gNsa, is5gSa = tower.is5gSa,
+                dataNetworkType = tower.dataNetworkType, frequencyMhz = tower.frequencyMhz,
+                vendor = tower.vendor, isIsolated = tower.isIsolated,
+                securityAlert = tower.securityAlert, handoversCount = tower.handoversCount
+            )
+            cellTowerDao.insert(entity)
+        }
     }
 
-    fun clearHistory() {
-        _history.value = emptyList()
+    suspend fun clearHistory() {
+        cellTowerDao.clearHistory()
     }
 }
