@@ -56,11 +56,9 @@ class MainViewModel @Inject constructor(
     private val _isDownloading = kotlinx.coroutines.flow.MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
     
-    private val _scanStatus = kotlinx.coroutines.flow.MutableStateFlow("Ready")
-    val scanStatus: StateFlow<String> = _scanStatus.asStateFlow()
+    val scanStatus: StateFlow<String> = repository.scanStatus
 
-    private val _currentUserLocation = kotlinx.coroutines.flow.MutableStateFlow<android.location.Location?>(null)
-    val currentUserLocation: StateFlow<android.location.Location?> = _currentUserLocation.asStateFlow()
+
 
     private val _isScanning = kotlinx.coroutines.flow.MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
@@ -75,8 +73,6 @@ class MainViewModel @Inject constructor(
 
     private val _systemStatus = kotlinx.coroutines.flow.MutableStateFlow(SystemStatus())
     val systemStatus: StateFlow<SystemStatus> = _systemStatus.asStateFlow()
-
-    private var scanJob: Job? = null
 
     init {
         updateSystemStatus()
@@ -145,7 +141,7 @@ class MainViewModel @Inject constructor(
         if (_isScanning.value) return
         _isScanning.value = true
         android.util.Log.d("MainViewModel", "startScanning called")
-        _scanStatus.value = "Scanning..."
+        repository.updateScanStatus("Scanning...")
         
         // Start background service
         try {
@@ -158,55 +154,12 @@ class MainViewModel @Inject constructor(
         } catch (e: Exception) {
             android.util.Log.e("MainViewModel", "Failed to start service", e)
         }
-        
-        scanJob?.cancel()
-        scanJob = viewModelScope.launch {
-            while (isActive) {
-                // Get current location for mapping
-                val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-                val newLocation = try {
-                    // Get highest accuracy location possible
-                    val loc = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER) 
-                        ?: lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
-                    
-                    if (loc != null) {
-                        android.util.Log.d("MainViewModel", "New location captured: ${loc.latitude}, ${loc.longitude}")
-                        _currentUserLocation.value = loc
-                    }
-                    loc
-                } catch (e: SecurityException) { 
-                    android.util.Log.e("MainViewModel", "Location permission error", e)
-                    null 
-                }
-
-                val locationToUse = newLocation ?: _currentUserLocation.value
-                android.util.Log.d("MainViewModel", "Using location: ${locationToUse?.latitude}, ${locationToUse?.longitude}")
-
-
-                scanner.scan { results ->
-                    if (results.isNotEmpty()) {
-                        _scanStatus.value = "Found ${results.size} towers"
-                        // Attach current location to each tower for historical mapping
-                        val locatedResults = results.map { 
-                            it.copy(latitude = locationToUse?.latitude, longitude = locationToUse?.longitude)
-                        }
-                        launch {
-                            repository.updateTowers(locatedResults)
-                        }
-                    } else if (cellTowers.value.isEmpty()) {
-                        _scanStatus.value = "No towers found (Check GPS)"
-                    }
-                }
-                delay(4000)
-            }
-        }
     }
 
     fun stopScanning() {
         android.util.Log.d("MainViewModel", "stopScanning called")
         _isScanning.value = false
-        _scanStatus.value = "Stopped"
-        scanJob?.cancel()
+        repository.updateScanStatus("Stopped")
         val intent = Intent(context, CellTowerForegroundService::class.java)
         context.stopService(intent)
         // Also cancel any pending update download

@@ -508,59 +508,6 @@ fun CellTowerItem(tower: CellTowerInfo, onNavigateToMap: ((Double, Double) -> Un
                     tower.arfcn?.let { Text(text = "ARFCN/UARFCN: $it", style = MaterialTheme.typography.bodySmall) }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(text = "External Lookups", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                val context = LocalContext.current
-                
-                // Row of lookup buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // OpenCellID - Using a more universal search URL
-                    Button(
-                        onClick = {
-                            val url = "https://www.google.com/search?q=site:opencellid.org+${tower.mcc}+${tower.mnc}+${tower.lac}+${tower.cid}"
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                            context.startActivity(intent)
-                        },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                    ) {
-                        Text("OpenCellID", fontSize = 10.sp)
-                    }
-
-                    // CellMapper - Direct search page
-                    Button(
-                        onClick = {
-                            val url = "https://www.cellmapper.net/map?mcc=${tower.mcc}&mnc=${tower.mnc}"
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                            context.startActivity(intent)
-                        },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                    ) {
-                        Text("CellMapper", fontSize = 10.sp)
-                    }
-                    
-                    // Google Search - Generic and robust
-                    Button(
-                        onClick = {
-                            val query = "cell tower ${tower.mcc} ${tower.mnc} ${tower.lac} ${tower.cid}"
-                            val url = "https://www.google.com/search?q=${query.replace(" ", "+")}"
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                            context.startActivity(intent)
-                        },
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                    ) {
-                        Text("Google Search", fontSize = 10.sp)
-                    }
-                }
-                
                 // Local Map Button
                 Spacer(modifier = Modifier.height(8.dp))
                 val hasCoords = tower.latitude != null && tower.longitude != null

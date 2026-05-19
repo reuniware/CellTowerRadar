@@ -6,10 +6,16 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.content.Context
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationResult
+import android.os.Looper
 import com.reuniware.celltowerradar.MainActivity
 import com.reuniware.celltowerradar.repository.CellTowerRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -29,6 +35,10 @@ class CellTowerForegroundService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var scanJob: Job? = null
     private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var wakeLock: PowerManager.WakeLock? = null
+    
+    private var lastKnownLocation: android.location.Location? = null
+    private lateinit var locationCallback: LocationCallback
 
     companion object {
         const val CHANNEL_ID = "CellTowerScanningChannel"
@@ -39,21 +49,44 @@ class CellTowerForegroundService : Service() {
         super.onCreate()
         createNotificationChannel()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                locationResult.lastLocation?.let {
+                    lastKnownLocation = it
+                }
+            }
+        }
+        
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "CellTowerRadar::ScanWakeLock")
+        wakeLock?.acquire()
     }
 
     @SuppressLint("MissingPermission")
-    private suspend fun getCurrentLocation(): android.location.Location? {
-        return try {
-            val task = fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-            task.await()
+    private fun startLocationUpdates() {
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 4000)
+            .setMinUpdateIntervalMillis(2000)
+            .build()
+
+        try {
+            fusedLocationClient.requestLocationUpdates(
+                locationRequest,
+                locationCallback,
+                Looper.getMainLooper()
+            )
         } catch (e: Exception) {
-            android.util.Log.e("CellTowerService", "Error getting location", e)
-            null
+            android.util.Log.e("CellTowerService", "Failed to request location updates", e)
         }
+    }
+
+    private fun stopLocationUpdates() {
+        fusedLocationClient.removeLocationUpdates(locationCallback)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundService()
+        startLocationUpdates()
         startScanning()
         return START_STICKY
     }
@@ -96,17 +129,25 @@ class CellTowerForegroundService : Service() {
         scanJob = serviceScope.launch {
             while (isActive) {
                 android.util.Log.d("CellTowerService", "Requesting scan...")
-                // Wrapped the scan call to ensure repository operations run within a coroutine context if needed,
-                // although the error specifically suggests a problem with how the suspend function/callback interacts.
-                // Given the scanner structure, we will just ensure the repository update is handled appropriately.
+                
+                val currentLoc = lastKnownLocation
+                
                 scanner.scan { results ->
                     launch {
-                        android.util.Log.d("CellTowerService", "Scan results received: ${results.size} towers")
-                        repository.updateTowers(results)
-                        updateNotification("${results.size} towers found")
+                        if (results.isNotEmpty()) {
+                            val locatedResults = results.map { 
+                                it.copy(latitude = currentLoc?.latitude, longitude = currentLoc?.longitude)
+                            }
+                            android.util.Log.d("CellTowerService", "Scan results received: ${results.size} towers")
+                            repository.updateTowers(locatedResults)
+                            repository.updateScanStatus("Found ${results.size} towers")
+                            updateNotification("${results.size} towers found")
+                        } else {
+                            repository.updateScanStatus("No towers found (Check GPS)")
+                        }
                     }
                 }
-                delay(5000)
+                delay(4000)
             }
         }
     }
@@ -146,6 +187,12 @@ class CellTowerForegroundService : Service() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        stopLocationUpdates()
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+            }
+        }
         super.onDestroy()
     }
 }

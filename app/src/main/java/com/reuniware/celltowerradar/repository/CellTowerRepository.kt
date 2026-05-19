@@ -16,6 +16,13 @@ class CellTowerRepository @Inject constructor(
     private val _cellTowers = MutableStateFlow<List<CellTowerInfo>>(emptyList())
     val cellTowers: StateFlow<List<CellTowerInfo>> = _cellTowers.asStateFlow()
 
+    private val _scanStatus = MutableStateFlow("Ready")
+    val scanStatus: StateFlow<String> = _scanStatus.asStateFlow()
+
+    fun updateScanStatus(status: String) {
+        _scanStatus.value = status
+    }
+
     // Expose flow from DB
     val history: Flow<List<CellTowerEntity>> = cellTowerDao.getAllHistory()
 
